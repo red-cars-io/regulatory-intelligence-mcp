@@ -1,0 +1,19 @@
+{
+  "actorSpecification": 1,
+  "name": "regulatory-intelligence-mcp",
+  "title": "Regulatory Intelligence MCP",
+  "version": "1.0",
+  "description": "Regulatory compliance MCP for AI agents — FDA enforcement, SEC filings, sanctions screening",
+  "input": "../input_schema.json",
+  "readme": "../README.md",
+  "defaultRunOptions": {
+    "memoryMbytes": 512,
+    "timeoutSecs": 120
+  },
+  "usesStandbyMode": true,
+  "webServerMcpPath": "/mcp",
+  "pricing": {
+    "model": "PAY_PER_EVENT"
+  },
+  "categories": ["MCP_SERVERS", "AI"]
+}

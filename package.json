@@ -1,0 +1,25 @@
+{
+  "name": "regulatory-intelligence-mcp",
+  "version": "1.0.0",
+  "description": "Regulatory compliance MCP for AI agents — FDA enforcement, SEC filings, sanctions screening",
+  "main": "src/main.js",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "apify": "^3.1.0"
+  },
+  "keywords": [
+    "regulatory",
+    "compliance",
+    "mcp",
+    "fda",
+    "sec",
+    "edgar",
+    "sanctions",
+    "export-control",
+    "due-diligence"
+  ],
+  "license": "Apache-2.0"
+}

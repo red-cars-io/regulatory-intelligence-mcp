@@ -1,0 +1,27 @@
+{
+  "title": "Regulatory Intelligence MCP",
+  "description": "Regulatory compliance data for AI agents — FDA enforcement, SEC filings, sanctions screening",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "tool": {
+      "title": "Tool",
+      "description": "The MCP tool to invoke",
+      "type": "string",
+      "enum": [
+        "search_regulations",
+        "entity_compliance_check",
+        "regulatory_filing_tracker",
+        "export_control_search",
+        "compliance_risk_report"
+      ],
+      "default": "search_regulations"
+    },
+    "params": {
+      "title": "Parameters",
+      "description": "Tool-specific parameters",
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}
