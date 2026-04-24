@@ -1,12 +1,6 @@
-import { Actor } from 'apify';
+import Apify, { Actor } from 'apify';
 import http from 'http';
 import { TOOLS, PPE_PRICES, handleTool } from './tools.js';
-
-// =============================================================================
-// CONSTANTS
-// =============================================================================
-
-const PORT = Actor.config.get('containerPort') || process.env.ACTOR_WEB_SERVER_PORT || 4321;
 
 // =============================================================================
 // MCP MANIFEST
@@ -20,21 +14,13 @@ const MCP_MANIFEST = {
 };
 
 // =============================================================================
-// MCP REQUEST HANDLER
-// =============================================================================
-
-async function handleMCPRequest(request) {
-    const { tool, params = {} } = request;
-    return await handleTool(tool, params);
-}
-
-// =============================================================================
-// HTTP SERVER (Standby Mode)
+// APIFY INIT
 // =============================================================================
 
 await Actor.init();
 
 const isStandby = Actor.config.get('metaOrigin') === 'STANDBY';
+const PORT = Actor.config.get('containerPort') || process.env.ACTOR_WEB_SERVER_PORT || 4321;
 
 if (isStandby) {
     const server = http.createServer(async (req, res) => {
