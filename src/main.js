@@ -20,15 +20,6 @@ const MCP_MANIFEST = {
 };
 
 // =============================================================================
-// MCP REQUEST HANDLER
-// =============================================================================
-
-async function handleMCPRequest(request) {
-    const { tool, params = {} } = request;
-    return await handleTool(tool, params);
-}
-
-// =============================================================================
 // HTTP SERVER (Standby Mode)
 // =============================================================================
 
@@ -200,3 +191,92 @@ if (input) {
 }
 
 await Actor.exit();
+
+// =============================================================================
+// EXPORT handleRequest FOR MCP GATEWAY COMPATIBILITY
+// =============================================================================
+
+export default {
+    handleRequest: async ({ request, response, log }) => {
+        log.info("Regulatory Intelligence MCP received request");
+
+        try {
+            const body = typeof request.body === 'string' ? JSON.parse(request.body) : request.body;
+            const id = body.id ?? null;
+            const method = body.method;
+
+            const reply = (result) => {
+                const resp = id !== null
+                    ? { jsonrpc: '2.0', id, result }
+                    : result;
+                response.send(resp);
+            };
+
+            const replyError = (code, message) => {
+                const resp = id !== null
+                    ? { jsonrpc: '2.0', id, error: { code, message } }
+                    : { status: 'error', error: message };
+                response.send(resp);
+            };
+
+            // Standard MCP JSON-RPC methods
+            if (method === 'initialize') {
+                log.info('MCP initialize');
+                return reply({
+                    protocolVersion: '2024-11-05',
+                    capabilities: { tools: {} },
+                    serverInfo: { name: 'regulatory-intelligence-mcp', version: '1.0.0' }
+                });
+            }
+
+            if (method === 'tools/list' || (!method && body.tool === 'list')) {
+                log.info('MCP tools/list');
+                return reply({ tools: MCP_MANIFEST.tools });
+            }
+
+            if (method === 'tools/call') {
+                const toolName = body.params?.name;
+                const toolArgs = body.params?.arguments || {};
+                if (!toolName) return replyError(-32602, 'Missing params.name');
+                log.info(`MCP tools/call: ${toolName}`);
+
+                // PPE charging
+                const price = PPE_PRICES[toolName];
+                if (price && Actor) {
+                    try {
+                        await Actor.charge(price, { eventName: toolName });
+                    } catch (chargeError) {
+                        console.warn('PPE charging failed:', chargeError.message);
+                    }
+                }
+
+                const toolResult = await handleTool(toolName, toolArgs);
+                return reply({
+                    content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }]
+                });
+            }
+
+            // Legacy format: { tool, params }
+            const { tool, params = {} } = body;
+            if (!tool) return replyError(-32602, 'Missing tool name');
+
+            log.info(`Calling tool: ${tool}`);
+
+            // PPE charging
+            const price = PPE_PRICES[tool];
+            if (price && Actor) {
+                try {
+                    await Actor.charge(price, { eventName: tool });
+                } catch (chargeError) {
+                    console.warn('PPE charging failed:', chargeError.message);
+                }
+            }
+
+            const result = await handleTool(tool, params);
+            reply({ status: "success", result });
+        } catch (error) {
+            log.error(`Error: ${error.message}`);
+            response.send({ status: "error", error: error.message });
+        }
+    }
+};
