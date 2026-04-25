@@ -12,6 +12,9 @@
   },
   "usesStandbyMode": true,
   "webServerMcpPath": "/mcp",
+  "meta": {
+    "templateId": "standby-node"
+  },
   "pricing": {
     "model": "PAY_PER_EVENT"
   },
