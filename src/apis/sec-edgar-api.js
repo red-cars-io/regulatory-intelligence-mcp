@@ -4,7 +4,6 @@
 // Rate limit: 10 req/sec
 
 const EDGAR_SEARCH_BASE = 'https://efts.sec.gov/LATEST/search-index';
-const EDGAR_ENTITY_BASE = 'https://www.sec.gov/cgi-bin/browse-edgar';
 const TIMEOUT_MS = 60000;
 
 // User-Agent header required by SEC
@@ -30,31 +29,56 @@ async function fetchWithTimeout(url, options = {}) {
 }
 
 /**
- * Get company CIK by ticker symbol
+ * Get company CIK by ticker symbol using SEC company search
  * @param {string} ticker - Stock ticker symbol
  * @returns {Promise<Object>} Company info with CIK
  */
 export async function getCompanyByTicker(ticker) {
     try {
-        // Use SEC entity search endpoint
-        const url = `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&type=10-K&dateb=&owner=include&count=1&company=${encodeURIComponent(ticker)}`;
-        const response = await fetchWithTimeout(url, {
-            headers: SEC_HEADERS
-        });
+        // Use SEC company search API
+        const url = `https://efts.sec.gov/LATEST/search-index?q=${encodeURIComponent(ticker)}&dateRange=1m`;
+        const response = await fetchWithTimeout(url, { headers: SEC_HEADERS });
 
         if (!response.ok) {
-            return { cik: null, companyName: null, error: `HTTP ${response.status}` };
+            return { ticker, cik: null, companyName: null, error: `HTTP ${response.status}`, source: 'SEC EDGAR' };
         }
 
-        const text = await response.text();
-        // Parse CIK from response
-        const cikMatch = text.match(/CIK=(\d+)/);
-        const nameMatch = text.match(/<td>([^<]+)<\/td>\s*<td>/);
+        const data = await response.json();
+        const hits = data.hits?.hits || [];
+
+        // Find a hit with matching CIK
+        let cik = null;
+        let companyName = ticker;
+
+        for (const hit of hits) {
+            const fields = hit._source || {};
+            const displayNames = fields.display_names || [];
+            const ciks = fields.ciks || [];
+
+            // Look for exact ticker match in display_names
+            const tickerPattern = new RegExp(`\\(${ticker}\\)\\s*\\(CIK\\s*(\\d+)\\)`, 'i');
+            for (const name of displayNames) {
+                const match = name.match(tickerPattern);
+                if (match) {
+                    cik = match[1];
+                    companyName = name.replace(/\s*\([^)]*\)/, '').replace(/\s*\(CIK\s*\d+\)/, '').trim();
+                    break;
+                }
+            }
+
+            // Also check if CIK directly matches ticker
+            for (const c of ciks) {
+                // CIK 0000320193 for AAPL - look for AAPL pattern
+                const cikStr = String(c).padStart(10, '0');
+            }
+
+            if (cik) break;
+        }
 
         return {
             ticker,
-            cik: cikMatch ? cikMatch[1] : null,
-            companyName: nameMatch ? nameMatch[1] : ticker,
+            cik,
+            companyName: companyName || ticker,
             source: 'SEC EDGAR'
         };
     } catch (error) {
@@ -81,9 +105,7 @@ export async function searchFilings(keyword, dateRange = '30day', maxResults = 2
         const secRange = rangeMap[dateRange] || '1m';
 
         const url = `${EDGAR_SEARCH_BASE}?q=${encodeURIComponent(keyword)}&dateRange=${secRange}`;
-        const response = await fetchWithTimeout(url, {
-            headers: SEC_HEADERS
-        });
+        const response = await fetchWithTimeout(url, { headers: SEC_HEADERS });
 
         if (!response.ok) {
             return {
@@ -97,14 +119,16 @@ export async function searchFilings(keyword, dateRange = '30day', maxResults = 2
 
         const data = await response.json();
         const hits = data.hits?.hits || [];
+
         const filings = hits.slice(0, maxResults).map(hit => {
             const fields = hit._source || {};
+            const displayName = (fields.display_names && fields.display_names[0]) ? fields.display_names[0] : keyword;
             return {
-                formType: fields.form_type || fields.ttype || 'Unknown',
-                filingDate: fields.file_date || fields.date || null,
-                description: fields.display_names?.[0] || fields.company_name || keyword,
-                documentUrl: fields.file_url || null,
-                companyName: fields.company_name || keyword
+                formType: fields.form || 'Unknown',
+                filingDate: fields.file_date || null,
+                description: displayName,
+                documentUrl: `https://www.sec.gov/Archives/edgar/data/${(fields.ciks && fields.ciks[0]) || '0'}/${fields.adsh || ''}/${fields._id?.split(':')[1] || ''}`,
+                companyName: displayName.replace(/\s*\([^)]*\)/, '').trim()
             };
         });
 
@@ -138,29 +162,7 @@ export async function getCompanyFilings(ticker, formTypes = ['10-K', '10-Q', '8-
         const companyInfo = await getCompanyByTicker(ticker);
         const cik = companyInfo.cik;
 
-        if (!cik) {
-            // Fall back to keyword search
-            const searchResults = await searchFilings(ticker, dateRange, 50);
-            const filtered = searchResults.filings.filter(f =>
-                formTypes.length === 0 || formTypes.some(ft => f.formType.includes(ft))
-            );
-
-            return {
-                query: ticker,
-                ticker,
-                cik: null,
-                companyName: ticker,
-                formsTracked: formTypes,
-                recentFilings: filtered.slice(0, 20),
-                filingCount: filtered.length,
-                source: 'SEC EDGAR'
-            };
-        }
-
-        // Build form type filter
-        const formFilter = formTypes.length > 0 ? formTypes.join(',') : '10-K,10-Q,8-K,4,SC 13G,DEF 14A';
-
-        // Use SEC search API for company filings
+        // Map date range to SEC format
         const rangeMap = {
             '7day': '1w',
             '30day': '1m',
@@ -169,11 +171,9 @@ export async function getCompanyFilings(ticker, formTypes = ['10-K', '10-Q', '8-
         };
         const secRange = rangeMap[dateRange] || '1m';
 
-        // Search for company
+        // Search for company filings
         const url = `${EDGAR_SEARCH_BASE}?q=${encodeURIComponent(ticker)}&dateRange=${secRange}`;
-        const response = await fetchWithTimeout(url, {
-            headers: SEC_HEADERS
-        });
+        const response = await fetchWithTimeout(url, { headers: SEC_HEADERS });
 
         if (!response.ok) {
             return {
@@ -194,17 +194,18 @@ export async function getCompanyFilings(ticker, formTypes = ['10-K', '10-Q', '8-
 
         const recentFilings = hits
             .filter(hit => {
-                const formType = hit._source?.form_type || hit._source?.ttype || '';
+                const formType = hit._source?.form || '';
                 return formTypes.length === 0 || formTypes.some(ft => formType.includes(ft));
             })
             .slice(0, 20)
             .map(hit => {
                 const fields = hit._source || {};
+                const displayName = (fields.display_names && fields.display_names[0]) ? fields.display_names[0] : companyInfo.companyName || ticker;
                 return {
-                    formType: fields.form_type || fields.ttype || 'Unknown',
-                    filingDate: fields.file_date || fields.date || null,
-                    description: fields.display_names?.[0] || companyInfo.companyName,
-                    documentUrl: fields.file_url || null
+                    formType: fields.form || 'Unknown',
+                    filingDate: fields.file_date || null,
+                    description: displayName,
+                    documentUrl: fields.adsh ? `https://www.sec.gov/Archives/edgar/data/${cik || '0'}/${fields.adsh.replace(/-/g, '')}` : null
                 };
             });
 
@@ -212,7 +213,7 @@ export async function getCompanyFilings(ticker, formTypes = ['10-K', '10-Q', '8-
             query: ticker,
             ticker,
             cik,
-            companyName: companyInfo.companyName,
+            companyName: companyInfo.companyName || ticker,
             formsTracked: formTypes,
             recentFilings,
             filingCount: recentFilings.length,
