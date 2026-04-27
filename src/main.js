@@ -1,4 +1,4 @@
-import Apify, { Actor } from 'apify';
+import { Actor } from 'apify';
 import http from 'http';
 import { TOOLS, PPE_PRICES, handleTool } from './tools.js';
 
@@ -147,18 +147,26 @@ if (isStandby) {
         res.end(JSON.stringify({ error: 'Not found' }));
     });
 
-    server.listen(PORT, () => {
-        console.log(`Regulatory Intelligence MCP listening on port ${PORT}`);
-    });
-
     server.on('error', (err) => {
         console.error('Server error:', err);
         process.exit(1);
     });
 
+    // Wait for server to be fully bound before continuing
+    await new Promise((resolve, reject) => {
+        server.listen(PORT, () => {
+            console.log(`Regulatory Intelligence MCP listening on port ${PORT}`);
+            resolve();
+        });
+        server.on('error', reject);
+    });
+
     // Handle graceful shutdown
     process.on('SIGTERM', () => {
-        server.close(() => process.exit(0));
+        server.close(() => {
+            console.log('Server closed, exiting...');
+            process.exit(0);
+        });
     });
 }
 
