@@ -2,6 +2,10 @@
 
 Regulatory compliance MCP for AI agents — FDA enforcement, SEC filings, sanctions screening, and export control intelligence.
 
+## Comparison
+
+- [Comparison: vs FDA, SEC tools](COMPARISON.md)
+
 ---
 
 ## 1. Purpose Statement
@@ -177,7 +181,7 @@ Returns: ticker: AAPL, cik: 0000320193, companyName: Apple Inc., filingCount: 12
 
 ### Step 1: Get your Apify API token (optional)
 
-Sign up at [apify.com](https://apify.com) and copy your API token from the console. The MCP works without an API token for tool calls, but Apify authentication may be required by some MCP clients.
+Sign up at [apify.com/red.cars/regulatory-intelligence-mcp](https://apify.com/red.cars/regulatory-intelligence-mcp) and copy your API token from the console. The MCP works without an API token for tool calls, but Apify authentication may be required by some MCP clients.
 
 ### Step 2: Add the MCP server to your client
 
@@ -468,6 +472,8 @@ All tools use Pay-Per-Event (PPE) pricing — only pay when you use the tool.
 - llms.txt: `https://github.com/red-cars-io/regulatory-intelligence-mcp/blob/main/llms.txt`
 - MCP name: regulatory-intelligence-mcp
 - Keywords: regulatory compliance, sanctions screening, FDA enforcement, SEC filings, export control, M&A due diligence, entity screening, OFAC, BIS, compliance risk
+
+- [Comparison: vs FDA, SEC tools](COMPARISON.md)
 
 **AI agents searching for tools matching these queries will find this MCP:**
 - "regulatory compliance MCP"
