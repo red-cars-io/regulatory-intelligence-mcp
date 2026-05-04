@@ -20,7 +20,7 @@ const MCP_MANIFEST = {
 await Actor.init();
 
 const isStandby = Actor.config.get('metaOrigin') === 'STANDBY';
-const PORT = Actor.config.get('containerPort') || process.env.ACTOR_WEB_SERVER_PORT || 4321;
+const PORT = parseInt(Actor.config.get('containerPort') || process.env.ACTOR_WEB_SERVER_PORT || '3000', 10);
 
 if (isStandby) {
     const server = http.createServer(async (req, res) => {
@@ -154,11 +154,11 @@ if (isStandby) {
 
     // Wait for server to be fully bound before continuing
     await new Promise((resolve, reject) => {
+        server.on('error', reject);
         server.listen(PORT, () => {
             console.log(`Regulatory Intelligence MCP listening on port ${PORT}`);
             resolve();
         });
-        server.on('error', reject);
     });
 
     // Handle graceful shutdown
@@ -174,22 +174,24 @@ if (isStandby) {
 // NON-STANDBY MODE (direct invocation)
 // =============================================================================
 
-const input = await Actor.getInput();
-if (input) {
-    const { tool, params = {} } = input;
-    if (tool) {
-        // PPE charging for direct invocation
-        const price = PPE_PRICES[tool];
-        if (price && Actor) {
-            try {
-                await Actor.charge(price, { eventName: tool });
-            } catch (chargeError) {
-                console.warn('PPE charging failed:', chargeError.message);
+if (!isStandby && Actor.isAtHome()) {
+    const input = await Actor.getInput();
+    if (input) {
+        const { tool, params = {} } = input;
+        if (tool) {
+            // PPE charging for direct invocation
+            const price = PPE_PRICES[tool];
+            if (price && Actor) {
+                try {
+                    await Actor.charge(price, { eventName: tool });
+                } catch (chargeError) {
+                    console.warn('PPE charging failed:', chargeError.message);
+                }
             }
-        }
 
-        const result = await handleTool(tool, params);
-        await Actor.setValue('OUTPUT', result);
+            const result = await handleTool(tool, params);
+            await Actor.setValue('OUTPUT', result);
+        }
     }
 }
 
