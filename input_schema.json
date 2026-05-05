@@ -18,10 +18,11 @@
       "default": "search_regulations"
     },
     "params": {
-      "title": "Parameters",
-      "description": "Tool-specific parameters",
+      "title": "Parameters (JSON)",
       "type": "object",
-      "additionalProperties": true
+      "description": "Tool parameters as JSON object",
+      "editor": "json",
+      "prefill": {}
     }
   }
 }
