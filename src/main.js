@@ -17,6 +17,15 @@ const MCP_MANIFEST = {
 // APIFY INIT
 // =============================================================================
 
+// Catch-all error handlers to surface silent crashes
+process.on('uncaughtException', (err) => {
+    console.error('[FATAL] Uncaught exception:', err.message, err.stack);
+    process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('[FATAL] Unhandled rejection:', reason);
+});
+
 await Actor.init();
 
 const isStandby = Actor.config.get('metaOrigin') === 'STANDBY';
