@@ -20,7 +20,7 @@ const MCP_MANIFEST = {
 await Actor.init();
 
 const isStandby = Actor.config.get('metaOrigin') === 'STANDBY';
-const PORT = parseInt(Actor.config.get('containerPort') || process.env.ACTOR_WEB_SERVER_PORT || '3000', 10);
+const PORT = parseInt(Actor.config.get('containerPort') || process.env.ACTOR_WEB_SERVER_PORT || '4321', 10);
 
 if (isStandby) {
     const server = http.createServer(async (req, res) => {
@@ -153,13 +153,22 @@ if (isStandby) {
     });
 
     // Wait for server to be fully bound before continuing
-    await new Promise((resolve, reject) => {
-        server.on('error', reject);
-        server.listen(PORT, () => {
-            console.log(`Regulatory Intelligence MCP listening on port ${PORT}`);
-            resolve();
+    try {
+        await new Promise((resolve, reject) => {
+            server.on('error', (err) => {
+                console.error('Server listen error:', err.message, err.code);
+                reject(err);
+            });
+            server.listen(PORT, '0.0.0.0', () => {
+                console.log(`Regulatory Intelligence MCP listening on port ${PORT}`);
+                resolve();
+            });
         });
-    });
+    } catch (listenErr) {
+        console.error('Server failed to start on port', PORT, ':', listenErr.message);
+        console.error('Check if containerPort is already in use or if another process is bound to this port.');
+        process.exit(1);
+    }
 
     // Handle graceful shutdown
     process.on('SIGTERM', () => {
