@@ -1,19 +1,33 @@
 {
-  "actorSpecification": 1,
-  "name": "regulatory-intelligence-mcp",
-  "title": "Regulatory Intelligence MCP",
-  "version": "1.0",
-  "description": "Regulatory compliance MCP for AI agents — FDA enforcement, SEC filings, sanctions screening",
-  "input": "../input_schema.json",
-  "readme": "../README.md",
-  "defaultRunOptions": {
-    "memoryMbytes": 512,
-    "timeoutSecs": 120
-  },
-  "usesStandbyMode": true,
-  "webServerMcpPath": "/mcp",
-  "pricing": {
-    "model": "PAY_PER_EVENT"
-  },
-  "categories": ["MCP_SERVERS", "AI"]
+    "$schema": "https://apify.com/schemas/v1/actor.ide.json",
+    "actorSpecification": 1,
+    "name": "regulatory-intelligence-mcp",
+    "title": "Regulatory Intelligence MCP",
+    "version": "1.1",
+    "description": "Regulatory compliance MCP for AI agents — FDA enforcement, SEC filings, sanctions screening",
+    "buildTag": "latest",
+    "usesStandbyMode": true,
+    "meta": {
+        "templateId": "ts-standby",
+        "generatedBy": "apify-cli"
+    },
+    "dockerfile": "../Dockerfile",
+    "webServerMcpPath": "/mcp",
+    "defaultRunOptions": {
+        "build": "latest",
+        "memoryMbytes": 1024,
+        "timeoutSecs": 3600
+    },
+    "input": {
+        "title": "Regulatory Intelligence MCP Input",
+        "description": "Input schema for Regulatory Intelligence MCP",
+        "type": "object",
+        "schemaVersion": 1,
+        "properties": {},
+        "required": []
+    },
+    "pricing": {
+        "model": "PAY_PER_EVENT"
+    },
+    "categories": ["MCP_SERVERS", "AI"]
 }

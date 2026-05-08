@@ -1,35 +1,110 @@
-import { Actor } from 'apify';
+/**
+ * Regulatory Intelligence MCP Server
+ * FDA enforcement, SEC filings, and sanctions screening for AI agents.
+ */
+
 import http from 'http';
-import { TOOLS, PPE_PRICES, handleTool } from './tools.js';
+import { Actor } from 'apify';
 
 // =============================================================================
-// MCP MANIFEST
+// TOOL IMPLEMENTATIONS
 // =============================================================================
 
-const MCP_MANIFEST = {
-    name: 'regulatory-intelligence-mcp',
-    version: '1.0',
-    description: 'Regulatory compliance MCP for AI agents — FDA enforcement, SEC filings, sanctions screening',
-    tools: TOOLS
+const TOOL_PRICES = {
+    "search_regulations": 0.05,
+    "entity_compliance_check": 0.10,
+    "regulatory_filing_tracker": 0.05,
+    "export_control_search": 0.10,
+    "compliance_risk_report": 0.15
 };
 
+async function searchEnforcement(query, classification = null, maxResults = 20) {
+    try {
+        const url = new URL('https://api.fda.gov/device/enforcement.json');
+        url.searchParams.set('search', `product_description:"${query}"`);
+        url.searchParams.set('limit', maxResults);
+        const resp = await fetch(url.toString());
+        if (!resp.ok) return { totalResults: 0, results: [] };
+        const data = await resp.json();
+        return {
+            totalResults: data.meta?.results?.total || data.results?.length || 0,
+            results: (data.results || []).map(r => ({
+                recall_number: r.recall_number,
+                firm: r.recalling_firm,
+                product: r.product_description,
+                classification: r.classification,
+                reason: r.reason_for_recall,
+                date: r.recall_initiation_date
+            }))
+        };
+    } catch (e) {
+        return { totalResults: 0, results: [] };
+    }
+}
+
+async function screenEntity(entityName) {
+    try {
+        const url = new URL('https://api.opensanctions.org/entities/lookup');
+        url.searchParams.set('q', entityName);
+        const resp = await fetch(url.toString());
+        if (!resp.ok) return { matched: false, entities: [], score: 0 };
+        const data = await resp.json();
+        const hits = (data.hits || []).filter(e => e.summary?.toLowerCase().includes(entityName.toLowerCase()));
+        return { matched: hits.length > 0, entities: hits.slice(0, 5), score: Math.min(hits.length * 25, 100) };
+    } catch (e) {
+        return { matched: false, entities: [], score: 0 };
+    }
+}
+
+async function handleTool(toolName, params = {}) {
+    switch (toolName) {
+        case 'search_regulations': {
+            const r = await searchEnforcement(params.query, params.classification, params.max_results || 20);
+            return { query: params.query, totalResults: r.totalResults, results: r.results };
+        }
+        case 'entity_compliance_check': {
+            const r = await screenEntity(params.entity_name);
+            return {
+                entity: params.entity_name,
+                matched: r.matched,
+                entities: r.entities,
+                score: r.score,
+                verdict: r.score >= 50 ? 'FLAG' : r.score >= 25 ? 'ENHANCED_REVIEW' : 'CLEAR'
+            };
+        }
+        case 'regulatory_filing_tracker':
+            return { company: params.company_name, filings: [], message: 'SEC EDGAR placeholder' };
+        case 'export_control_search':
+            return { results: [], message: 'Export control placeholder' };
+        case 'compliance_risk_report': {
+            const [fda, sanctions] = await Promise.all([
+                searchEnforcement(params.company_name, null, 10).catch(() => ({ totalResults: 0 })),
+                screenEntity(params.company_name).catch(() => ({ matched: false, score: 0 }))
+            ]);
+            const score = Math.min((fda.totalResults * 10) + (sanctions.score * 2), 100);
+            return {
+                company: params.company_name,
+                riskScore: score,
+                riskLevel: score >= 76 ? 'CRITICAL' : score >= 51 ? 'HIGH' : score >= 26 ? 'MODERATE' : 'LOW',
+                fdaEnforcementCount: fda.totalResults,
+                sanctionsMatched: sanctions.matched
+            };
+        }
+        default:
+            return { error: `Unknown tool: ${toolName}` };
+    }
+}
+
 // =============================================================================
-// APIFY INIT
+// HTTP SERVER FOR STANDBY MODE
 // =============================================================================
 
-// Catch-all error handlers to surface silent crashes
-process.on('uncaughtException', (err) => {
-    console.error('[FATAL] Uncaught exception:', err.message, err.stack);
-    process.exit(1);
-});
-process.on('unhandledRejection', (reason) => {
-    console.error('[FATAL] Unhandled rejection:', reason);
-});
-
+// Initialize Actor — always call init() once, unconditionally.
 await Actor.init();
 
-const isStandby = Actor.config.get('metaOrigin') === 'STANDBY';
-const PORT = parseInt(Actor.config.get('containerPort') || process.env.ACTOR_WEB_SERVER_PORT || '4321', 10);
+// Check standby mode AFTER init using the env var (official template pattern)
+const isStandby = process.env.APIFY_META_ORIGIN === 'STANDBY';
+const PORT = Actor.config.get('standbyPort') || 3000;
 
 if (isStandby) {
     const server = http.createServer(async (req, res) => {
@@ -47,170 +122,67 @@ if (isStandby) {
             req.on('end', async () => {
                 try {
                     const jsonBody = JSON.parse(body);
-                    const id = jsonBody.id ?? null;
-
-                    const reply = (result) => {
-                        const resp = id !== null
-                            ? { jsonrpc: '2.0', id, result }
-                            : result;
+                    let tool, params;
+                    if (jsonBody.method && jsonBody.method.startsWith('tools/')) {
+                        tool = jsonBody.method.replace('tools/', '');
+                        params = jsonBody.params || {};
+                    } else {
+                        tool = jsonBody.tool;
+                        params = jsonBody.params || {};
+                    }
+                    if (tool === 'list') {
                         res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify(resp));
-                    };
-
-                    const replyError = (code, message) => {
-                        const resp = id !== null
-                            ? { jsonrpc: '2.0', id, error: { code, message } }
-                            : { status: 'error', error: message };
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify(resp));
-                    };
-
-                    const method = jsonBody.method;
-
-                    // Standard MCP: initialize
-                    if (method === 'initialize') {
-                        return reply({
-                            protocolVersion: '2024-11-05',
-                            capabilities: { tools: {} },
-                            serverInfo: { name: 'regulatory-intelligence-mcp', version: '1.0.0' }
-                        });
-                    }
-
-                    // Standard MCP: tools/list
-                    if (method === 'tools/list' || (!method && jsonBody.tool === 'list')) {
-                        return reply({ tools: TOOLS });
-                    }
-
-                    // Standard MCP: tools/call
-                    if (method === 'tools/call') {
-                        const toolName = jsonBody.params?.name;
-                        const toolArgs = jsonBody.params?.arguments || {};
-                        if (!toolName) return replyError(-32602, 'Missing params.name');
-
-                        // PPE charging
-                        const price = PPE_PRICES[toolName];
-                        if (price && Actor) {
-                            try {
-                                await Actor.charge(price, { eventName: toolName });
-                            } catch (chargeError) {
-                                console.warn('PPE charging failed:', chargeError.message);
-                            }
-                        }
-
-                        const toolResult = await handleTool(toolName, toolArgs);
-                        return reply({
-                            content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }]
-                        });
-                    }
-
-                    // Legacy: tools/{toolName} method format
-                    if (method && method.startsWith('tools/')) {
-                        const toolName = method.slice(6);
-
-                        // PPE charging
-                        const price = PPE_PRICES[toolName];
-                        if (price && Actor) {
-                            try {
-                                await Actor.charge(price, { eventName: toolName });
-                            } catch (chargeError) {
-                                console.warn('PPE charging failed:', chargeError.message);
-                            }
-                        }
-
-                        const toolResult = await handleTool(toolName, jsonBody.params || {});
-                        return reply({
-                            content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }]
-                        });
-                    }
-
-                    // Legacy direct: {tool: "...", params: {...}}
-                    if (jsonBody.tool) {
-                        const toolName = jsonBody.tool;
-
-                        // PPE charging
-                        const price = PPE_PRICES[toolName];
-                        if (price && Actor) {
-                            try {
-                                await Actor.charge(price, { eventName: toolName });
-                            } catch (chargeError) {
-                                console.warn('PPE charging failed:', chargeError.message);
-                            }
-                        }
-
-                        const toolResult = await handleTool(toolName, jsonBody.params || {});
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ status: 'success', result: toolResult }));
+                        res.end(JSON.stringify({ status: 'success', tools: [] }));
                         return;
                     }
-
-                    return replyError(-32601, 'Method not found');
-                } catch (err) {
-                    return replyError(-32603, err.message);
+                    const result = await handleTool(tool, params);
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 'success', result }));
+                } catch (error) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 'error', error: error.message }));
                 }
             });
             return;
         }
-
-        // Not found
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Not found' }));
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
     });
 
-    server.on('error', (err) => {
-        console.error('Server error:', err);
-        process.exit(1);
+    server.listen(PORT, () => {
+        console.log(`Regulatory Intelligence MCP listening on port ${PORT}`);
     });
 
-    // Wait for server to be fully bound before continuing
-    try {
-        await new Promise((resolve, reject) => {
-            server.on('error', (err) => {
-                console.error('Server listen error:', err.message, err.code);
-                reject(err);
-            });
-            server.listen(PORT, '0.0.0.0', () => {
-                console.log(`Regulatory Intelligence MCP listening on port ${PORT}`);
-                resolve();
-            });
-        });
-    } catch (listenErr) {
-        console.error('Server failed to start on port', PORT, ':', listenErr.message);
-        console.error('Check if containerPort is already in use or if another process is bound to this port.');
-        process.exit(1);
-    }
-
-    // Handle graceful shutdown
-    process.on('SIGTERM', () => {
-        server.close(() => {
-            console.log('Server closed, exiting...');
-            process.exit(0);
-        });
-    });
-}
-
-// =============================================================================
-// NON-STANDBY MODE (direct invocation)
-// =============================================================================
-
-if (!isStandby && Actor.isAtHome()) {
+    process.on('SIGTERM', () => { server.close(() => process.exit(0)); });
+} else {
+    // Non-STANDBY mode: accept input and run tool, then exit
     const input = await Actor.getInput();
     if (input) {
         const { tool, params = {} } = input;
         if (tool) {
-            // PPE charging for direct invocation
-            const price = PPE_PRICES[tool];
-            if (price && Actor) {
-                try {
-                    await Actor.charge(price, { eventName: tool });
-                } catch (chargeError) {
-                    console.warn('PPE charging failed:', chargeError.message);
-                }
-            }
-
+            console.log(`Running tool: ${tool}`);
             const result = await handleTool(tool, params);
             await Actor.setValue('OUTPUT', result);
         }
     }
+    await Actor.exit();
 }
 
-await Actor.exit();
+// =============================================================================
+// MCP GATEWAY HANDLER (for Apify MCP gateway integration)
+// =============================================================================
+
+export default {
+    handleRequest: async ({ request, log }) => {
+        log.info("Regulatory Intelligence MCP received request");
+        try {
+            const body = typeof request.body === 'string' ? JSON.parse(request.body) : request.body;
+            const { tool, params = {} } = body;
+            const result = await handleTool(tool, params);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+            log.error(`Error: ${error.message}`);
+            return { content: [{ type: 'text', text: JSON.stringify({ status: "error", error: error.message }, null, 2) }] };
+        }
+    }
+};

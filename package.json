@@ -5,7 +5,7 @@
   "main": "src/main.js",
   "type": "module",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
     "apify": "^3.6.0"
