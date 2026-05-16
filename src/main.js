@@ -104,7 +104,7 @@ await Actor.init();
 
 // Check standby mode AFTER init using the env var (official template pattern)
 const isStandby = process.env.APIFY_META_ORIGIN === 'STANDBY';
-const PORT = Actor.config.get('standbyPort') || 3000;
+const PORT = Actor.config.get('containerPort') || process.env.ACTOR_WEB_SERVER_PORT || 3000;
 
 if (isStandby) {
     const server = http.createServer(async (req, res) => {
