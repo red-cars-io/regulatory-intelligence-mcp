@@ -58,11 +58,11 @@ async function screenEntity(entityName) {
 
 async function handleTool(toolName, params = {}) {
     switch (toolName) {
-        case 'search_regulations': { Actor.charge({ eventName: 'search_regulations', count: 1 });
+        case 'search_regulations': {
             const r = await searchEnforcement(params.query, params.classification, params.max_results || 20);
             return { query: params.query, totalResults: r.totalResults, results: r.results };
         }
-        case 'entity_compliance_check': { Actor.charge({ eventName: 'entity_compliance_check', count: 1 });
+        case 'entity_compliance_check': {
             const r = await screenEntity(params.entity_name);
             return {
                 entity: params.entity_name,
@@ -72,11 +72,11 @@ async function handleTool(toolName, params = {}) {
                 verdict: r.score >= 50 ? 'FLAG' : r.score >= 25 ? 'ENHANCED_REVIEW' : 'CLEAR'
             };
         }
-        case 'regulatory_filing_tracker': { Actor.charge({ eventName: 'regulatory_filing_tracker', count: 1 }); return { company: params.company_name, filings: [], message: 'SEC EDGAR placeholder' }; }
+        case 'regulatory_filing_tracker':
             return { company: params.company_name, filings: [], message: 'SEC EDGAR placeholder' };
-        case 'export_control_search': { Actor.charge({ eventName: 'export_control_search', count: 1 }); return { results: [], message: 'Export control placeholder' }; }
+        case 'export_control_search':
             return { results: [], message: 'Export control placeholder' };
-        case 'compliance_risk_report': { Actor.charge({ eventName: 'compliance_risk_report', count: 1 });
+        case 'compliance_risk_report': {
             const [fda, sanctions] = await Promise.all([
                 searchEnforcement(params.company_name, null, 10).catch(() => ({ totalResults: 0 })),
                 screenEntity(params.company_name).catch(() => ({ matched: false, score: 0 }))
